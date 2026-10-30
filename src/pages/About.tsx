@@ -43,9 +43,10 @@ export default function About() {
           <CardTitle icon={BrainCircuit}>Model</CardTitle>
           <ul className="space-y-2 text-sm text-slate-300">
             <li>• Input: {SEQUENCE_LENGTH} frames × {FEATURE_SIZE} features (2 hands × 21 landmarks × xyz).</li>
-            <li>• Per hand: wrist-relative landmarks scaled by palm size (orientation preserved); the wrist slot carries the wrist trajectory relative to the sequence start.</li>
-            <li>• Fixed hand slots (Right / Left as labelled by MediaPipe); missing hands are zero-padded with a validity mask; short gaps interpolated; sequences with &lt;60% hand frames rejected.</li>
-            <li>• LSTM(64) → Dropout(0.3) → Dense(64, ReLU) → Dropout(0.3) → Dense(N, softmax), Adam 1e-3, categorical cross-entropy.</li>
+            <li>• Stored: 21 landmarks per hand in palm units relative to the window start. Model features per hand: finger shape in a hand-local frame (independent of arm angle), palm orientation, wrist position and velocity, fingertip velocities; plus the vector between the hands. All standardised on the training set.</li>
+            <li>• Hands keep their slot by tracking position across frames (MediaPipe Left/Right labels can flip mid-gesture); missing hands are zero-padded; short gaps interpolated; sequences with &lt;60% hand frames rejected.</li>
+            <li>• Conv1D(64, k=3) → LSTM(64) → Dropout(0.3) → Dense(64, ReLU) → Dropout(0.3) → Dense(N, softmax), Adam, categorical cross-entropy; training augmentation with rotation, scale, time-warp, jitter and dropped frames.</li>
+            <li>• Unknown motions are rejected by confidence, margin, and an open-set distance check in the network's embedding space.</li>
             <li>• Validation holds out whole recording sessions; duplicates removed before splitting.</li>
             <li>• Live: confidence + margin thresholds, majority-vote smoothing and a per-sign cooldown.</li>
           </ul>

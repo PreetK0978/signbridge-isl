@@ -32,6 +32,7 @@ export default function Settings() {
           <CardTitle icon={ScanLine}>Recognition</CardTitle>
           <div className="space-y-4">
             <Slider label="Confidence threshold" value={settings.confidenceThreshold} min={0.4} max={0.99} step={0.01} onChange={(v) => update({ confidenceThreshold: v })} format={(v) => formatPercent(v, 0)} />
+            <Slider label="Unknown-motion strictness (lower = rejects more)" value={settings.maxNovelty} min={0.6} max={2} step={0.05} onChange={(v) => update({ maxNovelty: v })} format={(v) => `${v.toFixed(2)}×`} />
             <Slider label="Minimum margin over 2nd-best class" value={settings.minMargin} min={0} max={0.8} step={0.05} onChange={(v) => update({ minMargin: v })} format={(v) => formatPercent(v, 0)} />
             <Slider label="Smoothing window (predictions)" value={settings.smoothingWindow} min={2} max={15} step={1} onChange={(v) => update({ smoothingWindow: v, stableFrames: Math.min(settings.stableFrames, v) })} />
             <Slider label="Stable predictions required" value={settings.stableFrames} min={1} max={settings.smoothingWindow} step={1} onChange={(v) => update({ stableFrames: v })} />

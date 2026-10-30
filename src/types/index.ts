@@ -83,6 +83,8 @@ export interface TrainingSample {
   validity: number[][];
   source: SampleSource;
   createdAt: number;
+  /** Stored sequence format; missing = 1 (legacy, migrated on read). */
+  format?: number;
 }
 
 export interface EpochMetrics {
@@ -130,9 +132,15 @@ export interface ModelMeta {
   evaluation: EvaluationResult | null;
   split: SplitInfo;
   architecture: ClassifierConfig;
+  /** Feature-extractor version and standardisation statistics the model was trained with. */
+  normalization?: { version: number; mean: number[]; std: number[] };
+  /** Open-set class centres/radii in embedding space. */
+  openSet?: { centroids: number[][]; radii: number[] } | null;
 }
 
 export interface ClassifierConfig {
+  /** Conv1D filters before the LSTM (0 = no convolution). */
+  convFilters: number;
   lstmUnits: number;
   denseUnits: number;
   dropout: number;
@@ -168,6 +176,8 @@ export type HandTrackingEngine = 'main' | 'worker';
 export interface AppSettings {
   confidenceThreshold: number;
   minMargin: number;
+  /** Open-set strictness: reject inputs farther than this × class radius from every class. */
+  maxNovelty: number;
   stableFrames: number;
   smoothingWindow: number;
   cooldownMs: number;

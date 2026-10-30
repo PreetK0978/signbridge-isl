@@ -47,7 +47,9 @@ import { createId } from '../utils/id';
 
 type Phase = 'idle' | 'countdown' | 'recording';
 type Purpose = 'train' | 'test';
-type RecordResult = { ok: true; validRatio: number; purpose: Purpose; test?: Array<{ name: string; p: number }>; verdict?: string } | { ok: false; reason: string };
+type RecordResult =
+  | { ok: true; validRatio: number; purpose: Purpose; test?: Array<{ name: string; p: number }>; verdict?: string; sequence?: { frames: number[][]; validity: number[][] } }
+  | { ok: false; reason: string };
 
 const newSessionId = () => `sess_${createId()}`;
 
@@ -62,6 +64,7 @@ export default function TrainingStudio() {
   const [editing, setEditing] = useState<SignLabel | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SignLabel | null>(null);
   const [packsOpen, setPacksOpen] = useState(false);
+  const [correctionId, setCorrectionId] = useState('');
   const [sessionId, setSessionId] = useState(newSessionId);
   const [sessionCount, setSessionCount] = useState(0);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -122,9 +125,9 @@ export default function TrainingStudio() {
         .map((p, i) => ({ name: app.labelById(classifier.labelIds[i])?.english ?? modelMeta?.labelNames[i] ?? '?', p }))
         .sort((a, b) => b.p - a.p)
         .slice(0, 3);
-      const d = decide(pred, classifier.labelIds, { confidenceThreshold: settings.confidenceThreshold, minMargin: settings.minMargin });
+      const d = decide(pred, classifier.labelIds, { confidenceThreshold: settings.confidenceThreshold, minMargin: settings.minMargin, maxNovelty: settings.maxNovelty });
       const verdict = d.kind === 'sign' ? `Recognised as "${top[0].name}"` : d.kind === 'unknown' ? 'UNKNOWN SIGN (below threshold)' : 'Background / no sign';
-      setResult({ ok: true, validRatio: seq.validRatio, purpose: 'test', test: top, verdict });
+      setResult({ ok: true, validRatio: seq.validRatio, purpose: 'test', test: top, verdict, sequence: { frames: seq.frames, validity: seq.validity } });
       return;
     }
     if (!selected) return;
@@ -142,7 +145,7 @@ export default function TrainingStudio() {
     setResult({ ok: true, validRatio: seq.validRatio, purpose: 'train' });
     await refresh();
     setBurst((b) => Math.max(0, b - 1));
-  }, [selected, sessionId, refresh, classifier, settings.confidenceThreshold, settings.minMargin, app, modelMeta]);
+  }, [selected, sessionId, refresh, classifier, settings.confidenceThreshold, settings.minMargin, settings.maxNovelty, app, modelMeta]);
 
   const startRecording = useCallback(
     (purpose: Purpose) => {
@@ -203,6 +206,26 @@ export default function TrainingStudio() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [startRecording, selected]);
+
+  /** Human-in-the-loop correction: store a test recording under the sign it really was. */
+  const saveCorrection = async () => {
+    if (!result?.ok || !result.sequence) return;
+    const target = labels.find((l) => l.id === (correctionId || selectedId));
+    if (!target) return;
+    await addSample({
+      id: createId('s_'),
+      labelId: target.id,
+      sessionId,
+      frames: result.sequence.frames,
+      validity: result.sequence.validity,
+      source: 'webcam',
+      createdAt: Date.now(),
+    });
+    await logActivity('sample-recorded', `Corrected a test recording as "${target.english}"`);
+    await refresh();
+    setResult(null);
+    setNotice({ tone: 'green', text: `Saved as a training sample for "${target.english}". Retrain to apply the correction.` });
+  };
 
   const undoLast = async () => {
     if (!selected) return;
@@ -332,9 +355,9 @@ export default function TrainingStudio() {
   return (
     <div>
       <PageHeader
-        eyebrow="Teach the model"
+        eyebrow="Human training mode"
         title="Training Studio"
-        subtitle={`Record ${SEQUENCE_LENGTH}-frame landmark sequences for each sign, then train an LSTM in your browser. Only landmark coordinates are saved — never video.`}
+        subtitle={`Teach SignBridge by demonstrating: record ${SEQUENCE_LENGTH}-frame landmark sequences of each sign or gesture, train the model in your browser, test it, and correct its mistakes. Only landmark coordinates are saved — never video.`}
         actions={
           <>
             <Button icon={Upload} onClick={() => importRef.current?.click()}>Import JSON</Button>
@@ -441,7 +464,18 @@ export default function TrainingStudio() {
                   result.ok ? (
                     result.purpose === 'test' ? (
                       <Alert tone="cyan" icon={FlaskConical} title={`Test recording: ${result.verdict}`}>
-                        {result.test?.map((t) => `${t.name} ${formatPercent(t.p, 0)}`).join(' · ')} — not saved.
+                        <span className="block">{result.test?.map((t) => `${t.name} ${formatPercent(t.p, 0)}`).join(' · ')} — not saved yet.</span>
+                        {result.sequence && labels.length > 0 && (
+                          <span className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-xs">Teach the model — this was actually:</span>
+                            <select className={`${inputClass} !w-auto !py-1 text-xs`} value={correctionId || selectedId} onChange={(e) => setCorrectionId(e.target.value)} aria-label="Correct sign for this recording">
+                              {labels.map((l) => (
+                                <option key={l.id} value={l.id}>{l.english}</option>
+                              ))}
+                            </select>
+                            <Button size="sm" variant="primary" icon={Plus} onClick={saveCorrection}>Save as training sample</Button>
+                          </span>
+                        )}
                       </Alert>
                     ) : (
                       <Alert tone="green" icon={CheckCircle2}>Sample saved ({Math.round(result.validRatio * 100)}% frames with hands).</Alert>
@@ -494,7 +528,7 @@ export default function TrainingStudio() {
               <Toggle label="Augmentation" hint="Adds jittered copies of training samples" checked={settings.augment} onChange={(v) => update({ augment: v })} />
             </div>
             <p className="mt-2 text-xs text-slate-400">
-              {trainableCount} of {labels.length} signs have ≥{MIN_SAMPLES_PER_CLASS} samples. Architecture: LSTM(64) → Dropout(0.3) → Dense(64, ReLU) → Dropout → Softmax({Math.max(trainableCount, 0)}).
+              {trainableCount} of {labels.length} signs have ≥{MIN_SAMPLES_PER_CLASS} samples. Architecture: motion features → Conv1D(64) → LSTM(64) → Dense(64) → Softmax({Math.max(trainableCount, 0)}), with augmentation and unknown-motion detection.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {training ? (

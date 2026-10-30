@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { topPrediction } from '../src/ai/lstmClassifier';
 import { decide, RecognitionSmoother, type FrameDecision } from '../src/ai/predictionService';
 
@@ -91,5 +91,19 @@ describe('recognition smoothing', () => {
     expect(s.push({ kind: 'unknown', confidence: 0.4, bestLabelId: 'hello' }, 0).status).toBe('unknown');
     expect(s.push({ kind: 'no-hands' }, 10).status).toBe('no-hands');
     expect(s.push({ kind: 'background', confidence: 0.99 }, 20).status).toBe('idle');
+  });
+});
+
+describe('live window guard', () => {
+  it('does not classify windows that cover too little time', async () => {
+    const { PredictionService } = await import('../src/ai/predictionService');
+    const { makeMotionFrames } = await import('./helpers');
+    const predict = vi.fn();
+    const fake = { labelIds: ['a', 'b'], predict } as never;
+    const svc = new PredictionService(fake, [], T, { windowSize: 5, stableCount: 3, cooldownMs: 1000 });
+    const frames = makeMotionFrames('swipe', 1, 10); // 10 frames ≈ 300 ms
+    const out = svc.process(frames, 0, 1200);
+    expect(out.decision.kind).toBe('insufficient');
+    expect(predict).not.toHaveBeenCalled();
   });
 });

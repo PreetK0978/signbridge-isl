@@ -3,6 +3,7 @@ import type { AppSettings } from '../types';
 export const DEFAULT_SETTINGS: AppSettings = {
   confidenceThreshold: 0.8,
   minMargin: 0.25,
+  maxNovelty: 1,
   stableFrames: 4,
   smoothingWindow: 6,
   cooldownMs: 1500,

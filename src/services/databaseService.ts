@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { DATASET_FORMAT, DATASET_FORMAT_VERSION, FEATURE_SIZE, HAND_SLOTS, RAW_FORMAT, SEQUENCE_LENGTH } from '../ai/constants';
-import { buildSequence, isValidSequenceShape } from '../ai/sequenceProcessor';
+import { buildSequence, isValidSequenceShape, migrateV1Frames, SEQUENCE_FORMAT_VERSION } from '../ai/sequenceProcessor';
 import { createId } from '../utils/id';
 import type { ActivityEntry, ActivityKind, FrameData, HistoryEntry, ModelMeta, SignLabel, TrainingSample } from '../types';
 
@@ -59,13 +59,20 @@ export async function deleteLabel(id: string): Promise<number> {
 }
 
 // ---------- samples ----------
+/** Samples recorded before format 2 stored wrist-relative shapes; convert them on read. */
+export function upgradeSample(sample: TrainingSample): TrainingSample {
+  if ((sample.format ?? 1) >= SEQUENCE_FORMAT_VERSION) return sample;
+  return { ...sample, frames: migrateV1Frames(sample.frames, sample.validity), format: SEQUENCE_FORMAT_VERSION };
+}
+
 export async function getSamples(labelId?: string): Promise<TrainingSample[]> {
   const db = await getDb();
-  return labelId ? db.getAllFromIndex('samples', 'byLabel', labelId) : db.getAll('samples');
+  const rows = labelId ? await db.getAllFromIndex('samples', 'byLabel', labelId) : await db.getAll('samples');
+  return rows.map(upgradeSample);
 }
 export async function addSample(sample: TrainingSample): Promise<void> {
   if (!isValidSequenceShape(sample.frames, sample.validity)) throw new Error('Sample has an invalid shape.');
-  await (await getDb()).put('samples', sample);
+  await (await getDb()).put('samples', { ...sample, format: SEQUENCE_FORMAT_VERSION });
 }
 export async function deleteSample(id: string): Promise<void> {
   await (await getDb()).delete('samples', id);
@@ -249,8 +256,10 @@ export async function importDataset(data: unknown): Promise<ImportReport> {
       id: sample.id,
       labelId,
       sessionId: sample.sessionId || `import:${sample.id}`,
-      frames: sample.frames,
+      // Files exported before format 2 carry no per-sample format: migrate them.
+      frames: (sample.format ?? (file.formatVersion >= 2 ? SEQUENCE_FORMAT_VERSION : 1)) >= SEQUENCE_FORMAT_VERSION ? sample.frames : migrateV1Frames(sample.frames, sample.validity),
       validity: sample.validity,
+      format: SEQUENCE_FORMAT_VERSION,
       source: 'import',
       createdAt: sample.createdAt ?? Date.now(),
     });

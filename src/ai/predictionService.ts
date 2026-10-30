@@ -7,6 +7,8 @@ export interface ThresholdOptions {
   confidenceThreshold: number;
   /** Minimum gap between best and second-best class. */
   minMargin: number;
+  /** Open-set limit: reject when the embedding is farther than this × the class radius (default 1). */
+  maxNovelty?: number;
 }
 
 export type FrameDecision =
@@ -18,7 +20,7 @@ export type FrameDecision =
 
 /**
  * Apply confidence + margin thresholds to one prediction. Anything that does not clear
- * both thresholds is "unknown" — the system never guesses.
+ * the thresholds (or looks unlike every trained class in embedding space) is "unknown" — the system never guesses.
  */
 export function decide(
   prediction: Prediction,
@@ -27,7 +29,8 @@ export function decide(
   backgroundIds: ReadonlySet<string> = new Set(),
 ): FrameDecision {
   const labelId = labelIds[prediction.index];
-  if (prediction.confidence < options.confidenceThreshold || prediction.margin < options.minMargin) {
+  const novel = prediction.novelty !== undefined && prediction.novelty > (options.maxNovelty ?? 1);
+  if (novel || prediction.confidence < options.confidenceThreshold || prediction.margin < options.minMargin) {
     return { kind: 'unknown', confidence: prediction.confidence, bestLabelId: labelId };
   }
   if (backgroundIds.has(labelId)) return { kind: 'background', confidence: prediction.confidence };
@@ -169,11 +172,19 @@ export class PredictionService {
     this.smoother.reset();
   }
 
-  /** Classify a window of raw frames (typically the last ~1.5 s of camera frames). */
-  process(window: FrameData[], now: number): PredictionOutput {
+  /**
+   * Classify a window of raw frames (typically the last ~1.5 s of camera frames).
+   * `minSpanMs`: windows covering less time than this are not classified, because resampling a
+   * short window to 30 frames would distort the motion's speed (e.g. right after the camera starts).
+   */
+  process(window: FrameData[], now: number, minSpanMs = 0): PredictionOutput {
     const latest = window[window.length - 1];
     if (!latest || latest.hands.length === 0) {
       const decision: FrameDecision = { kind: 'no-hands' };
+      return { decision, state: this.smoother.push(decision, now), prediction: null };
+    }
+    if (latest.timestamp - window[0].timestamp < minSpanMs) {
+      const decision: FrameDecision = { kind: 'insufficient' };
       return { decision, state: this.smoother.push(decision, now), prediction: null };
     }
     const seq = buildSequence(window);

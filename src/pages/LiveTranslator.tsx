@@ -31,7 +31,10 @@ export default function LiveTranslator() {
   const landmarkDetector = useLandmarkDetector(settings.engine, settings.delegate);
   const gestureDetector = useGestureDetector(settings.delegate);
 
-  const thresholds = useMemo(() => ({ confidenceThreshold: settings.confidenceThreshold, minMargin: settings.minMargin }), [settings.confidenceThreshold, settings.minMargin]);
+  const thresholds = useMemo(
+    () => ({ confidenceThreshold: settings.confidenceThreshold, minMargin: settings.minMargin, maxNovelty: settings.maxNovelty }),
+    [settings.confidenceThreshold, settings.minMargin, settings.maxNovelty],
+  );
   const smoothing = useMemo(
     () => ({ windowSize: settings.smoothingWindow, stableCount: Math.min(settings.stableFrames, settings.smoothingWindow), cooldownMs: settings.cooldownMs }),
     [settings.smoothingWindow, settings.stableFrames, settings.cooldownMs],
@@ -92,7 +95,7 @@ export default function LiveTranslator() {
       if (now - lastPrediction.current < s.predictionIntervalMs) return;
       lastPrediction.current = now;
 
-      const out = service.process(buffer.current, now);
+      const out = service.process(buffer.current, now, s.recordingDurationMs * 0.8);
       const nameOf = (id: string, i: number) => byId(id)?.english ?? meta?.labelNames[i] ?? id;
       const top = out.prediction
         ? out.prediction.probabilities

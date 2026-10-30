@@ -94,29 +94,39 @@ tests/           Vitest + React Testing Library suites
 
 ## AI model
 
-**Input**: `[30, 126]` = 30 frames × (2 hands × 21 landmarks × xyz).
-
-**Feature preprocessing** (`src/ai/sequenceProcessor.ts`, `src/ai/landmarkNormalizer.ts`):
+**Stored sequence** (`src/ai/sequenceProcessor.ts`): `[30, 126]` = 30 frames × (2 hands × 21 landmarks × xyz), each hand expressed in *palm units* relative to its first wrist position in the window. Features are derived from this, so improving them never requires re-recording. Samples saved by older versions are migrated automatically.
 
 | Step | Detail |
 | --- | --- |
-| Hand slots | Slot 0 = `Right`, slot 1 = `Left` as labelled by MediaPipe. Two hands labelled with the same side are resolved by confidence. |
-| Normalisation | Landmarks 1–20 are wrist-relative and divided by palm size (mean of four palm bones). **Orientation is preserved** (no rotation), since it carries meaning in signing. |
-| Temporal movement | The wrist slot (landmark 0) stores the wrist trajectory relative to the hand's first position in the window, scaled by median palm size. |
-| Missing hands | Zero padding plus a `validity` mask (`[30, 2]`). A present hand is never all-zero, so padding is unambiguous. Gaps of ≤ 4 frames are linearly interpolated. |
-| Resampling | Variable-length capture → exactly 30 frames by linear interpolation over time. |
-| Rejection | Sequences with < 60 % of frames containing a hand are rejected. |
+| Hand tracking | Each physical hand keeps its slot by **spatial continuity** across frames. MediaPipe's Left/Right label can flip mid-gesture; trusting it per frame made a hand jump between feature columns and destroyed the motion signal. |
+| Missing hands | Zero padding plus a validity mask. Gaps of ≤ 4 frames are interpolated. Windows with < 60 % hand frames are rejected. |
+| Resampling | Variable-length capture → exactly 30 frames by linear interpolation. Live windows shorter than 80 % of the sign length are not classified. |
+
+**Model features** (`src/ai/featureExtractor.ts`, 179 per frame). For each hand: finger shape in a **hand-local frame** (independent of how the arm is angled), palm orientation, wrist position, **wrist velocity** and **fingertip velocities** (finger motion such as wiggling, beckoning, opening/closing), plus the vector between the two wrists. Every feature is **standardised** with statistics from the training set.
+
+Older versions fed raw wrist trajectory and wrist-relative points into the network without standardisation. The trajectory values were several times larger than the finger values, so the model mostly learned **arm direction**. That was the cause of motions being recognised only by the direction of the arm.
 
 **Network** (`src/ai/lstmClassifier.ts`):
 
 ```
-Input(30, 126) → LSTM(64) → Dropout(0.3) → Dense(64, ReLU) → Dropout(0.3) → Dense(N, softmax)
-Adam(1e-3), categorical cross-entropy, N = number of trained signs (rebuilt per vocabulary)
+Input(30, 179) → Conv1D(64, k=3, ReLU) → LSTM(64) → Dropout(0.3) → Dense(64, ReLU) → Dropout(0.3) → Dense(N, softmax)
+Adam, categorical cross-entropy, N = number of trained signs (rebuilt per vocabulary)
 ```
 
-**Training** (`src/ai/trainingService.ts`): exact duplicates are removed first. Then **whole recording sessions** are held out per sign for validation (falling back to a sample-level split, and saying so in the UI, when a sign has only one session). Optional jitter/scale augmentation applies to the training split only. Metrics shown are the real per-epoch values from `model.fit`, plus a confusion matrix and per-class precision/recall on the held-out set. Models are saved to IndexedDB (`indexeddb://signbridge-isl-classifier`) with metadata including a dataset version hash.
+**Training** (`src/ai/trainingService.ts`):
+- Exact duplicates are removed, then **whole recording sessions** are held out for validation.
+- Training samples get 2 augmented copies: whole-signer rotation, scale, **time-warp** (gesture speed and position in the window), landmark jitter and dropped frames.
+- Metrics are the real values from `model.fit`, plus a confusion matrix and per-class precision/recall.
+- After training, class centres and radii are computed in the penultimate-layer embedding for **open-set rejection**.
 
-**Inference** (`src/ai/predictionService.ts`): every ~150 ms the last ~1.5 s of frames is classified. A prediction is accepted only if confidence ≥ threshold (default 80 %) **and** the margin over the runner-up ≥ 25 %; otherwise the UI shows **UNKNOWN SIGN**. A sign is emitted once 4 of the last 6 windows agree. It is then suppressed while held and re-armed when the hands drop, another sign is emitted, or the signer clearly moves on (subject to a cooldown). An optional **Background** class teaches the model what "not signing" looks like and is never spoken.
+**Inference** (`src/ai/predictionService.ts`): every ~150 ms the last ~1.5 s of frames is classified. A prediction is accepted only if:
+- confidence ≥ threshold (default 80 %);
+- the margin over the runner-up is ≥ 25 %;
+- the embedding lies within the predicted class's radius (*unknown-motion strictness*).
+
+Otherwise the UI shows **UNKNOWN SIGN**. A sign is emitted once 4 of the last 6 windows agree. It's then suppressed while held and re-armed when the hands drop, another sign is emitted, or the signer clearly moves on. An optional **Background** class is never spoken.
+
+**Benchmark**: `npm run benchmark` trains on simulated signers and rates the pipeline out of 10. Results and the rating formula are in [docs/BENCHMARK.md](docs/BENCHMARK.md). The data is synthetic, so it tests the pipeline, not real-world accuracy.
 
 ## Recognition workflow
 

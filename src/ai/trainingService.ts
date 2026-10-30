@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs';
 import { FEATURE_SIZE, SEQUENCE_LENGTH } from './constants';
+import { applyNormalization, computeNormalization, extractFeatures, MODEL_FEATURES } from './featureExtractor';
 import { DEFAULT_CLASSIFIER_CONFIG, LstmClassifier } from './lstmClassifier';
 import { fnv1a, seededRandom, shuffle } from '../utils/hash';
 import type {
@@ -111,19 +112,51 @@ export function splitDataset(samples: TrainingSample[], validationRatio = 0.2, s
   };
 }
 
-/** Small jitter + scale augmentation applied to present-hand values only (padding stays zero). */
-export function augmentSample(sample: TrainingSample, rand: () => number, noise = 0.02, scaleJitter = 0.05): TrainingSample {
-  const gauss = () => {
-    const u = Math.max(rand(), 1e-9);
-    const v = rand();
-    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  };
-  const scale = 1 + (rand() * 2 - 1) * scaleJitter;
+const gaussian = (rand: () => number) => Math.sqrt(-2 * Math.log(Math.max(rand(), 1e-9))) * Math.cos(2 * Math.PI * rand());
+
+/**
+ * Realistic augmentation on the stored landmark sequence (padding stays zero):
+ * in-plane rotation of the whole signer (±0.25 rad), global scale, time warp (speed 0.8–1.25×
+ * with a random start offset, so the gesture lands at different points of the window),
+ * landmark jitter, and occasional dropped frames.
+ */
+export function augmentSample(sample: TrainingSample, rand: () => number, copyIndex = 0): TrainingSample {
+  const T = sample.frames.length;
+  const angle = (rand() * 2 - 1) * 0.25;
+  const c = Math.cos(angle);
+  const sn = Math.sin(angle);
+  const k = 1 + (rand() * 2 - 1) * 0.1;
+  const speed = 0.8 + rand() * 0.45;
+  const span = (T - 1) * speed;
+  const offset = (rand() * 2 - 1) * Math.abs(T - 1 - span) * 0.5 + (T - 1 - span) / 2;
+  const noise = 0.03;
   const half = FEATURE_SIZE / 2;
-  const frames = sample.frames.map((row, t) =>
-    row.map((v, i) => (sample.validity[t][i < half ? 0 : 1] ? v * scale + gauss() * noise : 0)),
-  );
-  return { ...sample, id: `${sample.id}-aug`, frames };
+  const frames: number[][] = [];
+  const validity: number[][] = [];
+  for (let t = 0; t < T; t++) {
+    const src = Math.min(T - 1, Math.max(0, offset + (t * span) / (T - 1)));
+    const i0 = Math.floor(src);
+    const i1 = Math.min(i0 + 1, T - 1);
+    const f = src - i0;
+    const row = new Array<number>(FEATURE_SIZE).fill(0);
+    const val = [0, 0];
+    for (let s = 0; s < 2; s++) {
+      const v0 = sample.validity[i0][s];
+      const v1 = sample.validity[i1][s];
+      if (!v0 && !v1) continue;
+      if (rand() < 0.03) continue; // dropped detection
+      val[s] = 1;
+      for (let j = s * half; j < (s + 1) * half; j += 3) {
+        const p = [0, 1, 2].map((d) => (v0 && v1 ? sample.frames[i0][j + d] * (1 - f) + sample.frames[i1][j + d] * f : (v0 ? sample.frames[i0] : sample.frames[i1])[j + d]));
+        row[j] = (p[0] * c - p[1] * sn) * k + gaussian(rand) * noise;
+        row[j + 1] = (p[0] * sn + p[1] * c) * k + gaussian(rand) * noise;
+        row[j + 2] = p[2] * k + gaussian(rand) * noise;
+      }
+    }
+    frames.push(row);
+    validity.push(val);
+  }
+  return { ...sample, id: `${sample.id}-aug${copyIndex}`, frames, validity };
 }
 
 export function countSamples(samples: TrainingSample[]): Map<string, number> {
@@ -138,12 +171,9 @@ export function trainableLabels(labels: SignLabel[], samples: TrainingSample[], 
   return labels.filter((l) => (counts.get(l.id) ?? 0) >= min);
 }
 
-function toTensors(samples: TrainingSample[], labelIds: string[]) {
+function toTensors(inputs: number[][][], samples: TrainingSample[], labelIds: string[]) {
   const index = new Map(labelIds.map((id, i) => [id, i]));
-  const xs = tf.tensor3d(
-    samples.map((s) => s.frames),
-    [samples.length, SEQUENCE_LENGTH, FEATURE_SIZE],
-  );
+  const xs = tf.tensor3d(inputs, [inputs.length, SEQUENCE_LENGTH, MODEL_FEATURES]);
   const ys = tf.tidy(() =>
     tf.oneHot(
       tf.tensor1d(
@@ -202,6 +232,8 @@ export interface TrainOptions {
   batchSize?: number;
   validationRatio?: number;
   augment?: boolean;
+  /** Augmented copies per training sample. */
+  augmentCopies?: number;
   config?: ClassifierConfig;
   seed?: number;
   onEpoch?: (metrics: EpochMetrics) => void;
@@ -229,6 +261,7 @@ export async function trainClassifier(options: TrainOptions): Promise<TrainResul
     batchSize = 16,
     validationRatio = 0.2,
     augment = true,
+    augmentCopies = 2,
     config = DEFAULT_CLASSIFIER_CONFIG,
     seed = 42,
   } = options;
@@ -247,12 +280,27 @@ export async function trainClassifier(options: TrainOptions): Promise<TrainResul
   let train = split.train;
   if (augment) {
     const rand = seededRandom(seed + 1);
-    train = [...train, ...train.map((s) => augmentSample(s, rand))];
+    const copies: TrainingSample[] = [];
+    for (let c = 0; c < augmentCopies; c++) for (const s of split.train) copies.push(augmentSample(s, rand, c));
+    train = [...train, ...copies];
   }
 
-  const classifier = LstmClassifier.create(labelIds, config);
-  const { xs, ys } = toTensors(train, labelIds);
-  const val = split.validation.length ? toTensors(split.validation, labelIds) : null;
+  // Standardisation statistics come from the training split only (no validation leakage).
+  const trainFeatures = train.map((s) => extractFeatures(s.frames, s.validity));
+  const normalization = computeNormalization(trainFeatures);
+  const classifier = LstmClassifier.create(labelIds, normalization, config);
+  const { xs, ys } = toTensors(
+    trainFeatures.map((f) => applyNormalization(f, normalization)),
+    train,
+    labelIds,
+  );
+  const val = split.validation.length
+    ? toTensors(
+        split.validation.map((s) => applyNormalization(extractFeatures(s.frames, s.validity), normalization)),
+        split.validation,
+        labelIds,
+      )
+    : null;
   const history: EpochMetrics[] = [];
 
   try {
@@ -290,6 +338,13 @@ export async function trainClassifier(options: TrainOptions): Promise<TrainResul
     val?.xs.dispose();
     val?.ys.dispose();
   }
+
+  // Open-set statistics from the real (non-augmented) training samples.
+  const labelIndex = new Map(labelIds.map((id, i) => [id, i]));
+  classifier.fitOpenSet(
+    trainFeatures.slice(0, split.train.length).map((f) => applyNormalization(f, normalization)),
+    split.train.map((s) => labelIndex.get(s.labelId)!),
+  );
 
   const names = new Map(labels.map((l) => [l.id, l.english]));
   const evaluation = split.validation.length ? evaluateClassifier(classifier, split.validation, names) : null;

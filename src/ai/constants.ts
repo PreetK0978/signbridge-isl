@@ -29,4 +29,5 @@ export const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
 
 export const DATASET_FORMAT = 'signbridge-dataset';
 export const RAW_FORMAT = 'signbridge-raw-frames';
-export const DATASET_FORMAT_VERSION = 1;
+/** 2 = samples store palm-unit landmark coordinates (see SEQUENCE_FORMAT_VERSION). */
+export const DATASET_FORMAT_VERSION = 2;

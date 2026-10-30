@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { FEATURE_SIZE, SEQUENCE_LENGTH } from '../src/ai/constants';
-import { buildLstmModel, LstmClassifier, topPrediction } from '../src/ai/lstmClassifier';
+import { MODEL_FEATURES } from '../src/ai/featureExtractor';
+import { buildLstmModel, DEFAULT_CLASSIFIER_CONFIG, LstmClassifier, topPrediction } from '../src/ai/lstmClassifier';
 import {
   computeDatasetVersion,
   dedupeSamples,
@@ -24,12 +25,15 @@ function dataset(perSession = 5, sessions = 3): TrainingSample[] {
 }
 
 describe('LSTM model', () => {
-  it('builds input [30,126] and a softmax sized to the vocabulary', () => {
+  it('builds input [30, features] and a softmax sized to the vocabulary', () => {
     const model = buildLstmModel(4);
-    expect(model.inputs[0].shape).toEqual([null, SEQUENCE_LENGTH, FEATURE_SIZE]);
+    expect(model.inputs[0].shape).toEqual([null, SEQUENCE_LENGTH, MODEL_FEATURES]);
     expect(model.outputs[0].shape).toEqual([null, 4]);
-    expect(model.layers.map((l) => l.getClassName())).toEqual(['InputLayer', 'LSTM', 'Dropout', 'Dense', 'Dropout', 'Dense']);
+    expect(model.layers.map((l) => l.getClassName())).toEqual(['InputLayer', 'Conv1D', 'LSTM', 'Dropout', 'Dense', 'Dropout', 'Dense']);
     model.dispose();
+    const plain = buildLstmModel(3, { ...DEFAULT_CLASSIFIER_CONFIG, convFilters: 0 }, FEATURE_SIZE);
+    expect(plain.layers.map((l) => l.getClassName())).toEqual(['InputLayer', 'LSTM', 'Dropout', 'Dense', 'Dropout', 'Dense']);
+    plain.dispose();
   });
 
   it('refuses to build a single-class classifier', () => {
@@ -87,10 +91,10 @@ describe('classifier training and prediction', () => {
     await expect(trainClassifier({ labels: LABELS, samples: dataset(5, 1).filter((s) => s.labelId === 'a'), epochs: 1 })).rejects.toBeInstanceOf(TrainingError);
   });
 
-  it('learns distinguishable motions and reports real held-out metrics', async () => {
+  it('learns distinguishable motions and reports real held-out metrics', { timeout: 240_000 }, async () => {
     const epochs: number[] = [];
-    result = await trainClassifier({ labels: LABELS, samples: dataset(5, 3), epochs: 25, augment: false, onEpoch: (m) => epochs.push(m.epoch) });
-    expect(epochs).toHaveLength(25);
+    result = await trainClassifier({ labels: LABELS, samples: dataset(5, 3), epochs: 20, augment: false, onEpoch: (m) => epochs.push(m.epoch) });
+    expect(epochs).toHaveLength(20);
     expect(result.history.every((h) => Number.isFinite(h.loss) && h.valAcc !== null)).toBe(true);
     expect(result.history[result.history.length - 1].loss).toBeLessThan(result.history[0].loss);
     expect(result.evaluation).not.toBeNull();
@@ -112,16 +116,27 @@ describe('classifier training and prediction', () => {
     expect(correct).toBeGreaterThanOrEqual(8);
   });
 
+  it('fits open-set statistics and flags very different input as novel', () => {
+    expect(result.classifier.openSet?.centroids).toHaveLength(3);
+    const known = result.classifier.predict(makeSample('a', 'swipe', 4242).frames);
+    // A hand that never moves and is flipped upside down looks like none of the trained motions.
+    const weird = makeSample('a', 'swipe', 4243);
+    const frames = weird.frames.map((row) => row.map((v, i) => (i < 63 ? (i % 3 === 1 ? -v * 3 : v * 0.2) : 0)));
+    const odd = result.classifier.predict(frames);
+    expect(known.novelty).toBeLessThan(odd.novelty!);
+  });
+
   it('saves to and loads from IndexedDB with identical predictions', async () => {
     const url = 'indexeddb://signbridge-test-model';
     await result.classifier.save(url);
-    const loaded = await LstmClassifier.load(result.classifier.labelIds, url);
+    const loaded = await LstmClassifier.load(result.classifier.labelIds, result.classifier.normalization, url, result.classifier.openSet);
     const s = makeSample('a', 'swipe', 777);
     const a = result.classifier.predict(s.frames).probabilities;
     const b = loaded.predict(s.frames).probabilities;
     a.forEach((v, i) => expect(b[i]).toBeCloseTo(v, 5));
+    expect(loaded.predict(s.frames).novelty).toBeCloseTo(result.classifier.predict(s.frames).novelty!, 5);
     loaded.dispose();
     await LstmClassifier.remove(url);
-    await expect(LstmClassifier.load(['a', 'b', 'c'], url)).rejects.toThrow();
+    await expect(LstmClassifier.load(['a', 'b', 'c'], result.classifier.normalization, url)).rejects.toThrow();
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { FEATURE_VERSION } from '../ai/featureExtractor';
 import { DEFAULT_CLASSIFIER_CONFIG, LstmClassifier } from '../ai/lstmClassifier';
 import { MIN_SAMPLES_PER_CLASS, type TrainResult } from '../ai/trainingService';
 import {
@@ -68,8 +69,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         setModelStatus('none');
         return;
       }
+      if (!meta.normalization || meta.normalization.version !== FEATURE_VERSION) {
+        setModelMeta(meta);
+        setModelStatus('error');
+        setModelError('Your saved model was trained by an older SignBridge version with less accurate motion features. Your samples are kept: open the Training Studio and press "Retrain model".');
+        return;
+      }
       try {
-        const loaded = await LstmClassifier.load(meta.labelIds);
+        const loaded = await LstmClassifier.load(meta.labelIds, meta.normalization, undefined, meta.openSet ?? null);
         if (cancelled) {
           loaded.dispose();
           return;
@@ -108,6 +115,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       evaluation: result.evaluation,
       split: result.split,
       architecture: DEFAULT_CLASSIFIER_CONFIG,
+      normalization: result.classifier.normalization,
+      openSet: result.classifier.openSet,
     };
     await setMeta(MODEL_META_KEY, meta);
     const acc = result.evaluation ? ` — validation accuracy ${(result.evaluation.accuracy * 100).toFixed(1)}%` : '';
