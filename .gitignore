@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+# builds
+dist/
+dist-ssr/
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+# env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# model binaries (downloaded via `npm run models:download`)
+public/models/*.task
+public/models/*.tflite
+public/mediapipe/
+# private data — never commit recordings or raw datasets
+dataset/
+datasets/
+recordings/
+*.mp4
+*.mov
+*.avi
+*.webm
+*.mkv
+signbridge-dataset-*.json
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log
+npm-debug.log*
+public/models/manifest.json

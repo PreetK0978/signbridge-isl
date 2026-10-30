@@ -1,0 +1,40 @@
+/* No web fonts are fetched: the app works fully offline and makes no third-party requests. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body {
+    @apply bg-navy-950 text-slate-200 antialiased;
+  }
+  ::selection {
+    @apply bg-cyan-400/30 text-white;
+  }
+  kbd {
+    @apply font-mono text-xs;
+  }
+}
+
+@layer utilities {
+  .bg-grid {
+    background-image:
+      radial-gradient(circle at 20% -10%, rgba(47, 107, 255, 0.18), transparent 45%),
+      radial-gradient(circle at 90% 10%, rgba(62, 230, 245, 0.08), transparent 40%),
+      linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: auto, auto, 48px 48px, 48px 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
