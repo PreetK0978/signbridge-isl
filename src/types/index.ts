@@ -36,6 +36,17 @@ export type SignCategory =
   | 'place'
   | 'food'
   | 'health'
+  | 'body'
+  | 'animal'
+  | 'nature'
+  | 'clothing'
+  | 'transport'
+  | 'education'
+  | 'work'
+  | 'money'
+  | 'home'
+  | 'describe'
+  | 'technology'
   | 'other'
   | 'background';
 
