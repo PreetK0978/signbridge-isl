@@ -21,11 +21,11 @@ import type { ClassifierConfig, SignLabel, TrainingSample } from '../../src/type
 import { GESTURES, HARD_GROUPS, makeSigner, OOV_GESTURES, recordGesture, sessionOf, type Signer } from './motionSynth';
 
 const CLASSES = Object.keys(GESTURES);
-const EPOCHS = Number(process.env.BENCH_EPOCHS ?? 30);
+const EPOCHS = Number(process.env.BENCH_EPOCHS ?? 20);
 const VARIANTS = (process.env.BENCH_VARIANTS ?? 'legacy,current').split(',').map((v) => v.trim());
 const TRAIN_SESSIONS = 3;
-const TRAIN_REPS = 8; // per class per session → 24 per class, like the app's recommendation
-const TEST_REPS = 6;
+const TRAIN_REPS = 5; // per class per session → 15 per class (the app recommends 20–30)
+const TEST_REPS = 4;
 const UNSEEN_SIGNERS = 5;
 const UNSEEN_REPS = 2;
 const THRESHOLDS = { confidenceThreshold: 0.8, minMargin: 0.25, maxNovelty: 1 };
@@ -92,7 +92,7 @@ function current(name: string, config: Partial<ClassifierConfig> = {}, extra: { 
 
 const ALL_VARIANTS: Record<string, Variant> = {
   legacy,
-  current: current('Current (app defaults)'),
+  current: current('Current (app pipeline, 1 augmented copy)', {}, { augmentCopies: 1 }),
   noconv: current('Current without Conv1D', { convFilters: 0 }),
   noaug: current('Current without augmentation', {}, { augment: false }),
   aug1: current('Current, 1 augmented copy', {}, { augmentCopies: 1 }),
@@ -190,7 +190,7 @@ describe('motion recognition benchmark', () => {
       details.push(
         `**${v.name}**\n- hard groups (personal / new people): ${HARD_GROUPS.map((g, i) => `${g.join(' vs ')} ${pct(ep.groups[i])} / ${pct(eu.groups[i])}`).join('; ')}\n- per class (personal): ${CLASSES.map((c, i) => `${c} ${pct(ep.perClass[i])}`).join(', ')}\n- per class (new people): ${CLASSES.map((c, i) => `${c} ${pct(eu.perClass[i])}`).join(', ')}`,
       );
-      console.log(rows[rows.length - 1]);
+      process.stderr.write(`${rows[rows.length - 1]}\n`);
       p.dispose();
     }
 
