@@ -103,6 +103,24 @@ export function BarList({ items, target }: { items: Array<{ label: string; value
   );
 }
 
+/** Samples per sign — only signs that have samples, so large vocabularies stay readable. */
+export function SampleBars({ labels, sampleCounts, target = 25 }: { labels: Array<{ id: string; english: string; hindi: string }>; sampleCounts: Map<string, number>; target?: number }) {
+  const withSamples = labels.filter((l) => (sampleCounts.get(l.id) ?? 0) > 0);
+  const empty = labels.length - withSamples.length;
+  return (
+    <div>
+      {withSamples.length ? (
+        <div className="max-h-72 overflow-y-auto pr-1">
+          <BarList target={target} items={withSamples.map((l) => ({ label: l.english, value: sampleCounts.get(l.id) ?? 0, sub: l.hindi || undefined }))} />
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">No samples recorded yet.</p>
+      )}
+      {empty > 0 && <p className="mt-2 text-xs text-slate-500">{empty} sign{empty === 1 ? '' : 's'} in the vocabulary still have no samples.</p>}
+    </div>
+  );
+}
+
 export function ConfusionMatrix({ names, matrix }: { names: string[]; matrix: number[][] }) {
   const max = Math.max(1, ...matrix.flat());
   return (

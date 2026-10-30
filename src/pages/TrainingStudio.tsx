@@ -31,14 +31,15 @@ import {
 } from '../ai/trainingService';
 import { extractDataset, groupVideosByFolder } from '../ai/videoExtractor';
 import { TrackedCamera } from '../components/Camera/TrackedCamera';
-import { BarList, ConfusionMatrix, TrainingCharts } from '../components/Dashboard/Charts';
+import { ConfusionMatrix, SampleBars, TrainingCharts } from '../components/Dashboard/Charts';
 import { LabelFormModal } from '../components/Common/LabelFormModal';
+import { VocabularyPacksModal } from '../components/Common/VocabularyPacksModal';
 import { Alert, Badge, Button, Card, CardTitle, EmptyState, Field, inputClass, Modal, PageHeader, ProgressBar, Slider, Toggle } from '../components/Common/ui';
 import { useAppData, useSettings } from '../hooks/useAppContext';
 import { useLandmarkDetector } from '../hooks/useDetectors';
 import type { Detection } from '../hooks/useHandTracking';
 import { addSample, deleteSample, exportDataset, getSamples, importDataset, logActivity } from '../services/databaseService';
-import { addStarterWords, categoryLabel, removeLabel } from '../services/vocabularyService';
+import { CATEGORIES, categoryLabel, removeLabel } from '../services/vocabularyService';
 import type { EpochMetrics, EvaluationResult, FrameData, SignLabel } from '../types';
 import { downloadJson, readJsonFile } from '../utils/file';
 import { formatPercent } from '../utils/format';
@@ -60,6 +61,7 @@ export default function TrainingStudio() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SignLabel | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SignLabel | null>(null);
+  const [packsOpen, setPacksOpen] = useState(false);
   const [sessionId, setSessionId] = useState(newSessionId);
   const [sessionCount, setSessionCount] = useState(0);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -299,10 +301,9 @@ export default function TrainingStudio() {
     }
   };
 
-  const addStarter = async () => {
-    const n = await addStarterWords();
+  const onPacksAdded = async (n: number) => {
     await refresh();
-    setNotice({ tone: 'cyan', text: n ? `Added ${n} starter words. Learn each sign from the ISLRTC dictionary before recording.` : 'Starter words are already in your vocabulary.' });
+    setNotice({ tone: 'cyan', text: n ? `Added ${n} words. Learn each sign from the ISLRTC dictionary, then record 20–30 samples per sign.` : 'Those words are already in your vocabulary.' });
   };
 
   const counts = labels.map((l) => sampleCounts.get(l.id) ?? 0);
@@ -375,7 +376,7 @@ export default function TrainingStudio() {
                 action={
                   <div className="flex flex-wrap justify-center gap-2">
                     <Button variant="primary" icon={Plus} onClick={() => { setEditing(null); setFormOpen(true); }}>New label</Button>
-                    <Button icon={Database} onClick={addStarter}>Add starter word list</Button>
+                    <Button icon={Database} onClick={() => setPacksOpen(true)}>Add vocabulary packs</Button>
                   </div>
                 }
               >
@@ -387,15 +388,22 @@ export default function TrainingStudio() {
                   <div className="min-w-[12rem] flex-1">
                     <Field label="Sign to record">
                       <select className={inputClass} value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={phase !== 'idle'}>
-                        {labels.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.english}{l.hindi ? ` · ${l.hindi}` : ''} ({sampleCounts.get(l.id) ?? 0})
-                          </option>
+                        {CATEGORIES.filter((c) => labels.some((l) => l.category === c.value)).map((c) => (
+                          <optgroup key={c.value} label={c.label}>
+                            {labels
+                              .filter((l) => l.category === c.value)
+                              .map((l) => (
+                                <option key={l.id} value={l.id}>
+                                  {l.english}{l.hindi ? ` · ${l.hindi}` : ''} ({sampleCounts.get(l.id) ?? 0})
+                                </option>
+                              ))}
+                          </optgroup>
                         ))}
                       </select>
                     </Field>
                   </div>
                   <Button icon={Plus} onClick={() => { setEditing(null); setFormOpen(true); }}>New label</Button>
+                  <Button icon={Database} onClick={() => setPacksOpen(true)}>Packs</Button>
                 </div>
 
                 {selected && (
@@ -454,7 +462,7 @@ export default function TrainingStudio() {
               <p className="text-sm text-slate-400">No labels yet.</p>
             ) : (
               <>
-                <BarList target={RECOMMENDED_SAMPLES_PER_CLASS} items={labels.map((l) => ({ label: l.english, value: sampleCounts.get(l.id) ?? 0, sub: l.hindi || undefined }))} />
+                <SampleBars labels={labels} sampleCounts={sampleCounts} />
                 <div className="mt-4 max-h-56 space-y-1 overflow-y-auto pr-1">
                   {labels.map((l) => (
                     <div key={l.id} className="flex items-center justify-between rounded-lg px-2 py-1.5 text-sm hover:bg-white/5">
@@ -567,6 +575,7 @@ export default function TrainingStudio() {
         </div>
       </div>
 
+      <VocabularyPacksModal open={packsOpen} labels={labels} onClose={() => setPacksOpen(false)} onAdded={onPacksAdded} />
       <LabelFormModal open={formOpen} label={editing} onClose={() => setFormOpen(false)} onSaved={async (l) => { await refresh(); setSelectedId(l.id); }} />
       <Modal
         open={!!confirmDelete}

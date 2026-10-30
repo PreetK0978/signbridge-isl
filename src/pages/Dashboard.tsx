@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Activity, BookOpen, BrainCircuit, Database, Layers, ScanLine } from 'lucide-react';
 import { RECOMMENDED_SAMPLES_PER_CLASS } from '../ai/trainingService';
 import { Badge, Button, Card, CardTitle, EmptyState, PageHeader, StatCard } from '../components/Common/ui';
-import { BarList, LineChart } from '../components/Dashboard/Charts';
+import { LineChart, SampleBars } from '../components/Dashboard/Charts';
 import { useAppData } from '../hooks/useAppContext';
 import { getActivity, getMeta, getSamples, SESSION_COUNT_KEY } from '../services/databaseService';
 import { categoryLabel } from '../services/vocabularyService';
@@ -63,7 +63,7 @@ export default function Dashboard() {
           <CardTitle icon={Database} action={<Badge tone="slate">target {RECOMMENDED_SAMPLES_PER_CLASS}/sign</Badge>}>Dataset statistics</CardTitle>
           {labels.length ? (
             <div className="grid gap-6 md:grid-cols-[1.5fr_1fr]">
-              <BarList target={RECOMMENDED_SAMPLES_PER_CLASS} items={labels.map((l) => ({ label: l.english, value: sampleCounts.get(l.id) ?? 0, sub: l.hindi || undefined }))} />
+              <SampleBars labels={labels} sampleCounts={sampleCounts} />
               <div className="space-y-4 text-sm">
                 <div>
                   <p className="mb-2 text-xs uppercase tracking-wider text-slate-500">Sample sources</p>

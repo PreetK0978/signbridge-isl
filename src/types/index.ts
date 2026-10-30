@@ -31,6 +31,11 @@ export type SignCategory =
   | 'alphabet'
   | 'action'
   | 'object'
+  | 'time'
+  | 'colour'
+  | 'place'
+  | 'food'
+  | 'health'
   | 'other'
   | 'background';
 

@@ -1,5 +1,6 @@
 import { deleteLabel, getLabels, logActivity, putLabel } from './databaseService';
 import { createId } from '../utils/id';
+import { VOCABULARY_PACKS } from '../data/vocabularyPacks';
 import type { SignCategory, SignLabel } from '../types';
 
 export const ISLRTC_DICTIONARY_URL = 'https://divyangjan.depwd.gov.in/islrtc/';
@@ -15,6 +16,11 @@ export const CATEGORIES: Array<{ value: SignCategory; label: string }> = [
   { value: 'alphabet', label: 'Alphabet' },
   { value: 'action', label: 'Action' },
   { value: 'object', label: 'Object' },
+  { value: 'time', label: 'Time & days' },
+  { value: 'colour', label: 'Colour' },
+  { value: 'place', label: 'Place' },
+  { value: 'food', label: 'Food & drink' },
+  { value: 'health', label: 'Health & emergency' },
   { value: 'other', label: 'Other' },
   { value: 'background', label: 'Background (no sign)' },
 ];
@@ -108,14 +114,42 @@ export async function removeLabel(id: string): Promise<void> {
   await logActivity('label-deleted', `Deleted sign "${label?.english ?? id}" and ${removed} sample(s)`);
 }
 
-/** Add any starter words that are not already present. Returns how many were added. */
-export async function addStarterWords(): Promise<number> {
-  const existing = new Set((await getLabels()).map((l) => l.english.toLowerCase()));
+/**
+ * Add words that are not already in the vocabulary (matched by English, case-insensitive).
+ * Words only — each still needs recorded samples before it can be recognised.
+ */
+export async function addWords(words: Array<Pick<SignLabel, 'english' | 'hindi' | 'category'>>, source: string): Promise<number> {
+  const existing = new Set((await getLabels()).map((l) => l.english.trim().toLowerCase()));
   let added = 0;
-  for (const word of STARTER_WORDS) {
-    if (existing.has(word.english.toLowerCase())) continue;
-    await createLabel({ ...word, referenceUrl: ISLRTC_DICTIONARY_URL });
+  for (const word of words) {
+    const key = word.english.trim().toLowerCase();
+    if (existing.has(key)) continue;
+    const now = Date.now();
+    await putLabel({
+      id: createId('l_'),
+      english: word.english.trim(),
+      hindi: word.hindi.trim(),
+      category: word.category,
+      referenceUrl: ISLRTC_DICTIONARY_URL,
+      createdAt: now,
+      updatedAt: now,
+    });
+    existing.add(key);
     added++;
   }
+  if (added) await logActivity('label-created', `Added ${added} word(s) from ${source}`);
   return added;
+}
+
+/** Add any starter words that are not already present. Returns how many were added. */
+export async function addStarterWords(): Promise<number> {
+  return addWords(STARTER_WORDS, 'the starter list');
+}
+
+export async function addVocabularyPacks(packIds: string[]): Promise<number> {
+  const packs = VOCABULARY_PACKS.filter((p) => packIds.includes(p.id));
+  return addWords(
+    packs.flatMap((p) => p.words),
+    packs.length === 1 ? `the "${packs[0].name}" pack` : `${packs.length} vocabulary packs`,
+  );
 }

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, ExternalLink, Pencil, Plus, ScanLine, Search, Sparkles, Trash2 } from 'lucide-react';
+import { BookOpen, ExternalLink, Pencil, Plus, ScanLine, Library, Search, Trash2 } from 'lucide-react';
 import { MIN_SAMPLES_PER_CLASS, RECOMMENDED_SAMPLES_PER_CLASS } from '../ai/trainingService';
 import { LabelFormModal } from '../components/Common/LabelFormModal';
+import { VocabularyPacksModal } from '../components/Common/VocabularyPacksModal';
 import { Alert, Badge, Button, Card, EmptyState, inputClass, Modal, PageHeader, ProgressBar } from '../components/Common/ui';
 import { useAppData } from '../hooks/useAppContext';
-import { addStarterWords, CATEGORIES, categoryLabel, ISLRTC_DICTIONARY_URL, removeLabel } from '../services/vocabularyService';
+import { CATEGORIES, categoryLabel, ISLRTC_DICTIONARY_URL, removeLabel } from '../services/vocabularyService';
 import type { SignLabel } from '../types';
 
 type StatusFilter = 'all' | 'recognised' | 'ready' | 'collecting' | 'empty';
@@ -19,6 +20,8 @@ export default function SignLibrary() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SignLabel | null>(null);
   const [deleting, setDeleting] = useState<SignLabel | null>(null);
+  const [packsOpen, setPacksOpen] = useState(false);
+  const [added, setAdded] = useState<number | null>(null);
 
   const inModel = useMemo(() => new Set(modelMeta?.labelIds ?? []), [modelMeta]);
 
@@ -51,7 +54,7 @@ export default function SignLibrary() {
         subtitle="Your sign vocabulary, its training status and references. SignBridge ships no sign definitions — learn each sign from an authoritative source such as the ISLRTC dictionary."
         actions={
           <>
-            <Button icon={Sparkles} onClick={async () => { await addStarterWords(); await refresh(); }}>Add starter words</Button>
+            <Button icon={Library} onClick={() => setPacksOpen(true)}>Add vocabulary packs</Button>
             <Button variant="primary" icon={Plus} onClick={() => { setEditing(null); setFormOpen(true); }}>Add sign</Button>
           </>
         }
@@ -60,6 +63,12 @@ export default function SignLibrary() {
       <Alert tone="cyan" icon={BookOpen} title="Official reference">
         Indian Sign Language Research and Training Centre (ISLRTC), Department of Empowerment of Persons with Disabilities, Govt. of India — <a href={ISLRTC_DICTIONARY_URL} target="_blank" rel="noreferrer" className="underline">ISL dictionary</a>. Dictionary videos are © ISLRTC and are linked, not copied or redistributed, by SignBridge.
       </Alert>
+
+      {added !== null && (
+        <div className="mt-4">
+          <Alert tone="green">{added ? `Added ${added} words. Use the status filter "No samples" to see what still needs recording.` : 'Those words are already in your library.'}</Alert>
+        </div>
+      )}
 
       <Card className="mt-5">
         <div className="mb-5 flex flex-col gap-3 md:flex-row">
@@ -81,8 +90,8 @@ export default function SignLibrary() {
         </div>
 
         {labels.length === 0 ? (
-          <EmptyState icon={BookOpen} title="Your library is empty" action={<Button variant="primary" icon={Plus} onClick={() => { setEditing(null); setFormOpen(true); }}>Add a sign</Button>}>
-            Add signs you know (with English and Hindi), or start from the suggested starter word list.
+          <EmptyState icon={BookOpen} title="Your library is empty" action={<div className="flex flex-wrap justify-center gap-2"><Button variant="primary" icon={Plus} onClick={() => { setEditing(null); setFormOpen(true); }}>Add a sign</Button><Button icon={Library} onClick={() => setPacksOpen(true)}>Add vocabulary packs</Button></div>}>
+            Add signs you know (with English and Hindi), or load ready-made vocabulary packs: alphabet, numbers and everyday words.
           </EmptyState>
         ) : filtered.length === 0 ? (
           <EmptyState icon={Search} title="No matching signs">Try a different search or filter.</EmptyState>
@@ -133,6 +142,7 @@ export default function SignLibrary() {
       </Card>
 
       <LabelFormModal open={formOpen} label={editing} onClose={() => setFormOpen(false)} onSaved={() => refresh()} />
+      <VocabularyPacksModal open={packsOpen} labels={labels} onClose={() => setPacksOpen(false)} onAdded={async (n) => { await refresh(); setAdded(n); }} />
       <Modal
         open={!!deleting}
         title="Delete sign?"
