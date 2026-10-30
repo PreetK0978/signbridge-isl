@@ -36,3 +36,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 public/models/manifest.json
+
+# local editor/agent config
+.claude/
