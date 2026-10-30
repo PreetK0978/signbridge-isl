@@ -47,6 +47,8 @@ export type SignCategory =
   | 'home'
   | 'describe'
   | 'technology'
+  | 'gesture'
+  | 'slang'
   | 'other'
   | 'background';
 

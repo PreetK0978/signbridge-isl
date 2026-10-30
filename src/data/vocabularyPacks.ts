@@ -373,6 +373,32 @@ export const VOCABULARY_PACKS: VocabularyPack[] = [
       ['Charger', 'चार्जर'], ['Photo', 'फ़ोटो'], ['Video call', 'वीडियो कॉल'],
     ]),
   },
+  {
+    id: 'gestures',
+    name: 'Common hand gestures (not ISL)',
+    description: 'Everyday and rude gestures used in India and abroad. These are generic gestures, NOT Indian Sign Language vocabulary.',
+    words: w('gesture', [
+      ['Middle finger', 'बीच की उँगली (अपमानजनक इशारा)'], ['Thumbs up', 'अंगूठा ऊपर'], ['Thumbs down', 'अंगूठा नीचे'],
+      ['OK sign', 'ओके का इशारा'], ['Peace sign', 'वी का इशारा'], ['Raised fist', 'उठी हुई मुट्ठी'], ['Wave', 'हाथ हिलाना'],
+      ['Clap', 'ताली'], ['Pointing', 'इशारा करना'], ['Stop hand', 'रुकने का इशारा'], ['Beckon', 'पास बुलाने का इशारा'],
+      ['Shush', 'चुप रहने का इशारा'], ['Call me gesture', 'फ़ोन करो का इशारा'], ['Rock on', 'रॉक ऑन का इशारा'],
+      ['Crossed fingers', 'उँगलियाँ क्रॉस करना'], ['High five', 'हाई फ़ाइव'], ['Folded hands', 'हाथ जोड़ना'],
+      ['Facepalm', 'माथा पीटना'], ['Shrug', 'कंधे उचकाना'], ['Salute', 'सलामी'], ['Fist bump', 'मुट्ठी टकराना'],
+      ['Finger heart', 'उँगली से दिल'], ['Loser sign', 'लूज़र का इशारा'], ['Fig sign', 'ठेंगा'],
+    ]),
+  },
+  {
+    id: 'slang',
+    name: 'Swear words & insults',
+    description: 'Rude words and insults. ISL has its own signs for many of these; dictionaries often leave them out, so learn them from Deaf signers.',
+    words: w('slang', [
+      ['Fuck off', 'भाड़ में जाओ'], ['Fuck', 'अपशब्द (F-शब्द)'], ['Shit', 'गंदगी (अपशब्द)'], ['Bullshit', 'बकवास'],
+      ['Damn', 'धत्'], ['Bastard', 'कमीना'], ['Bitch', 'कुतिया (अपशब्द)'], ['Asshole', 'कमीना इंसान'],
+      ['Shut up', 'चुप रहो'], ['Get lost', 'दफ़ा हो जाओ'], ['Go away', 'चले जाओ'], ['Idiot', 'बेवकूफ़'], ['Stupid', 'मूर्ख'],
+      ['Fool', 'उल्लू'], ['Crazy', 'पागल'], ['Liar', 'झूठा'], ['Cheat', 'धोखेबाज़'], ['Useless', 'निकम्मा'],
+      ['Ugly', 'बदसूरत'], ['Lazy', 'आलसी'], ['Hate', 'नफ़रत'], ['Disgusting', 'घिनौना'], ['Nonsense', 'फ़ालतू बात'],
+    ]),
+  },
 ];
 
 export const ALL_PACK_WORD_COUNT = VOCABULARY_PACKS.reduce((n, p) => n + p.words.length, 0);

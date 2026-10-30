@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
-import { Check, Library } from 'lucide-react';
+import { Check, Library, Plus } from 'lucide-react';
 import { ALL_PACK_WORD_COUNT, VOCABULARY_PACKS } from '../../data/vocabularyPacks';
-import { addVocabularyPacks, ISLRTC_DICTIONARY_URL } from '../../services/vocabularyService';
-import type { SignLabel } from '../../types';
-import { Alert, Button, Modal } from './ui';
+import { addVocabularyPacks, addWords, CATEGORIES, ISLRTC_DICTIONARY_URL, parseWordList } from '../../services/vocabularyService';
+import type { SignCategory, SignLabel } from '../../types';
+import { Alert, Button, inputClass, Modal } from './ui';
 
 /** Pick ready-made word lists to add to the vocabulary in one go. */
 export function VocabularyPacksModal({ open, labels, onClose, onAdded }: { open: boolean; labels: SignLabel[]; onClose: () => void; onAdded: (count: number) => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [custom, setCustom] = useState('');
+  const [customCategory, setCustomCategory] = useState<SignCategory>('other');
   const existing = useMemo(() => new Set(labels.map((l) => l.english.trim().toLowerCase())), [labels]);
 
   const missing = (packId: string) => VOCABULARY_PACKS.find((p) => p.id === packId)!.words.filter((w) => !existing.has(w.english.toLowerCase())).length;
@@ -22,6 +24,21 @@ export function VocabularyPacksModal({ open, labels, onClose, onAdded }: { open:
       else next.add(id);
       return next;
     });
+
+  const customWords = useMemo(() => parseWordList(custom, customCategory), [custom, customCategory]);
+  const customNew = customWords.filter((w) => !existing.has(w.english.toLowerCase())).length;
+
+  const addCustom = async () => {
+    setBusy(true);
+    try {
+      const n = await addWords(customWords, 'a pasted list');
+      setCustom('');
+      onAdded(n);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const add = async () => {
     setBusy(true);
@@ -83,6 +100,29 @@ export function VocabularyPacksModal({ open, labels, onClose, onAdded }: { open:
           );
         })}
       </ul>
+
+      <div className="mt-5 border-t border-white/10 pt-4">
+        <p className="text-sm font-medium text-white">Or paste your own words</p>
+        <p className="mt-0.5 text-xs text-slate-500">One per line. Add Hindi after a | if you like, e.g. <code className="text-cyan-300">Thank you | धन्यवाद</code></p>
+        <textarea
+          className={`${inputClass} mt-2 min-h-[6rem] font-mono text-xs`}
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder={'Goodbye | अलविदा\nWater | पानी\nMy own sign'}
+          aria-label="Paste your own words"
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select className={`${inputClass} !w-auto !py-1.5 text-xs`} value={customCategory} onChange={(e) => setCustomCategory(e.target.value as SignCategory)} aria-label="Category for pasted words">
+            {CATEGORIES.map((c) => (
+              <option key={c.value} value={c.value}>{c.label}</option>
+            ))}
+          </select>
+          <Button size="sm" icon={Plus} onClick={addCustom} loading={busy} disabled={customNew === 0}>
+            Add {customNew} new word{customNew === 1 ? '' : 's'}
+          </Button>
+          {customWords.length > customNew && <span className="text-xs text-slate-500">{customWords.length - customNew} already in your library</span>}
+        </div>
+      </div>
     </Modal>
   );
 }

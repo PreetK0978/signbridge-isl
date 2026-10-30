@@ -32,6 +32,8 @@ export const CATEGORIES: Array<{ value: SignCategory; label: string }> = [
   { value: 'home', label: 'Home' },
   { value: 'describe', label: 'Describing words' },
   { value: 'technology', label: 'Technology' },
+  { value: 'gesture', label: 'Common gestures (not ISL)' },
+  { value: 'slang', label: 'Swear words & insults' },
   { value: 'other', label: 'Other' },
   { value: 'background', label: 'Background (no sign)' },
 ];
@@ -155,6 +157,25 @@ export async function addWords(words: Array<Pick<SignLabel, 'english' | 'hindi' 
 /** Add any starter words that are not already present. Returns how many were added. */
 export async function addStarterWords(): Promise<number> {
   return addWords(STARTER_WORDS, 'the starter list');
+}
+
+/**
+ * Parse a pasted word list: one word per line, optionally "English | Hindi" (a tab also works).
+ * Blank lines and lines starting with # are ignored; duplicates within the list are dropped.
+ */
+export function parseWordList(text: string, category: SignCategory = 'other'): Array<Pick<SignLabel, 'english' | 'hindi' | 'category'>> {
+  const seen = new Set<string>();
+  const out: Array<Pick<SignLabel, 'english' | 'hindi' | 'category'>> = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const [english = '', hindi = ''] = line.split(/\s*[|\t]\s*/);
+    const name = english.trim().slice(0, 60);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push({ english: name, hindi: hindi.trim(), category });
+  }
+  return out;
 }
 
 export async function addVocabularyPacks(packIds: string[]): Promise<number> {
